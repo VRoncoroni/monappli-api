@@ -1,0 +1,4 @@
+# Les jeux d'essai sont comparés octet pour octet : ni conversion de fins de ligne ni d'encodage
+tests/cases/** -text
+*.sh text eol=lf
+bin/* text eol=lf

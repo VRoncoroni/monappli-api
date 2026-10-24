@@ -1,0 +1,10 @@
+target/
+dist/
+.m2/
+socle/
+build.env
+run.json
+*.rpm
+.idea/
+*.iml
+.vscode/

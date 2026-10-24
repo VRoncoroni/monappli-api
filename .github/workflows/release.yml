@@ -1,0 +1,79 @@
+# Publie en release un candidat validé en preprod (équivalent du job manuel « release » de GitLab).
+# Actions > release > Run workflow, avec le candidat qui tourne en preprod, par exemple 2.4.1-38.
+# Le même RPM (mêmes octets, même empreinte) est copié de yum-candidates vers yum-releases,
+# puis le tag v2.4.1 et la release GitHub sont créés sur le commit qui a produit ce build.
+#
+# Environnement GitHub « release » : reviewers requis (décision humaine), secrets
+# NEXUS_CI_USER/_PASSWORD (lecture du candidat), NEXUS_RELEASE_USER/_PASSWORD (écriture des releases),
+# ANSIBLE_REPO_TOKEN (lecture du versions.yml de preprod).
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidat:
+        description: "Candidat à publier, VERSION-BUILD (ex. 2.4.1-38)"
+        required: true
+        type: string
+
+permissions:
+  contents: write        # tag + release
+  actions: read          # relire l'artefact RPM du build
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Retrouver le build du candidat
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDAT: ${{ inputs.candidat }}
+        run: |
+          case "$CANDIDAT" in
+            *[!0-9.-]*|*-*-*|-*|*-) echo "::error::Format attendu VERSION-BUILD, par exemple 2.4.1-38"; exit 1 ;;
+          esac
+          VERSION=${CANDIDAT%-*}
+          BUILD=${CANDIDAT##*-}
+          # Le numéro de build est le numéro d'exécution du workflow ci sur un push
+          gh run list --workflow ci.yml --event push --limit 1000 \
+            --json number,databaseId,headSha,conclusion \
+            --jq ".[] | select(.number == $BUILD)" > run.json
+          RUN_ID=$(jq -r '.databaseId // empty' run.json)
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::Aucun build ci n°$BUILD sur un push"; exit 1
+          fi
+          {
+            echo "VERSION=$VERSION"
+            echo "BUILD=$BUILD"
+            echo "RPM_FILE=monappli-api-$VERSION-$BUILD.noarch.rpm"
+            echo "COMMIT_SHA=$(jq -r .headSha run.json)"
+          } >> "$GITHUB_ENV"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Récupérer l'empreinte enregistrée au build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "${{ steps.run.outputs.run_id }}" --name "rpm-$VERSION-$BUILD" --dir dist
+
+      - name: Publier la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXUS_URL: ${{ vars.NEXUS_URL }}
+          NEXUS_CI_USER: ${{ secrets.NEXUS_CI_USER }}
+          NEXUS_CI_PASSWORD: ${{ secrets.NEXUS_CI_PASSWORD }}
+          NEXUS_RELEASE_USER: ${{ secrets.NEXUS_RELEASE_USER }}
+          NEXUS_RELEASE_PASSWORD: ${{ secrets.NEXUS_RELEASE_PASSWORD }}
+          ANSIBLE_REPO: ${{ vars.ANSIBLE_REPO || 'VRoncoroni/ansible-socle' }}
+          ANSIBLE_REPO_TOKEN: ${{ secrets.ANSIBLE_REPO_TOKEN }}
+        run: scripts/release.sh
+
+      - name: Résumé
+        run: echo "### Release monappli-api $VERSION (build $BUILD, commit $COMMIT_SHA)" >> "$GITHUB_STEP_SUMMARY"

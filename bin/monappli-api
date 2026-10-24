@@ -1,0 +1,7 @@
+#!/bin/sh
+# Lanceur du service, appelé par la unit systemd monappli-api.service.
+# JAVA_HOME est obligatoire : il est fourni par la surcharge java.conf déployée par Ansible.
+JAR="${MONAPPLI_JAR:-$(dirname "$0")/../lib/monappli-api.jar}"
+# JAVA_OPTS (api.env) peut contenir plusieurs options : découpage voulu
+# shellcheck disable=SC2086
+exec "${JAVA_HOME:?JAVA_HOME non défini (surcharge systemd java.conf absente ?)}/bin/java" ${JAVA_OPTS:-} -jar "$JAR"

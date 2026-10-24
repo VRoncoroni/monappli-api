@@ -1,0 +1,53 @@
+# Description du RPM monappli-api, fabriqué par nfpm (ni .spec ni rpmbuild).
+# Variables d'environnement fournies par la CI :
+#   VERSION          2.4.1  (version du pom.xml)
+#   BUILD            38     (numéro de pipeline : $CI_PIPELINE_IID ou $GITHUB_RUN_NUMBER)
+#   RPM_SIGNING_KEY  chemin de la clé GPG privée ; vide = paquet non signé (build local)
+#   NFPM_RPM_PASSPHRASE  phrase de passe de cette clé
+name: monappli-api
+arch: all                          # devient noarch dans le RPM
+platform: linux
+version: ${VERSION}                # 2.4.1
+release: ${BUILD}                  # 38
+version_schema: none
+maintainer: "Équipe monappli <monappli@exemple.local>"
+description: API d'exemple monappli
+vendor: Exemple
+homepage: https://github.com/VRoncoroni/monappli-api
+license: Proprietary
+
+depends:
+  - acl                            # Ansible devient monappli pour les jeux d'essai (become_user)
+
+contents:
+  - src: target/monappli-api.jar
+    dst: /opt/monappli/lib/monappli-api.jar
+    file_info: { mode: 0644 }
+  - src: bin/monappli-api
+    dst: /opt/monappli/bin/monappli-api
+    file_info: { mode: 0755 }
+  - src: bin/monappli
+    dst: /opt/monappli/bin/monappli
+    file_info: { mode: 0755 }
+  - src: bin/generer-synthese
+    dst: /opt/monappli/bin/generer-synthese
+    file_info: { mode: 0755 }
+  - src: packaging/monappli-api.service
+    dst: /usr/lib/systemd/system/monappli-api.service
+    file_info: { mode: 0644 }
+  - dst: /etc/monappli               # rempli par Ansible (app.conf, secrets.conf, api.env)
+    type: dir
+    file_info: { mode: 0750, owner: root, group: monappli }
+  - dst: /var/log/monappli
+    type: dir
+    file_info: { mode: 0750, owner: monappli, group: monappli }
+
+scripts:
+  preinstall: packaging/preinstall.sh
+  postinstall: packaging/postinstall.sh
+
+rpm:
+  summary: API d'exemple monappli
+  group: Applications/Internet
+  signature:
+    key_file: ${RPM_SIGNING_KEY}   # secret de type fichier ; phrase de passe dans NFPM_RPM_PASSPHRASE

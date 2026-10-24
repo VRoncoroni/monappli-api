@@ -1,0 +1,24 @@
+[Unit]
+Description=API monappli
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=monappli
+Group=monappli
+# JAVA_HOME est fourni par la surcharge java.conf déployée par Ansible
+# (/etc/systemd/system/monappli-api.service.d/java.conf). systemd n'accepte pas de variable
+# comme programme à exécuter : le lanceur lit JAVA_HOME et démarre le bon JDK.
+EnvironmentFile=-/etc/monappli/api.env
+ExecStart=/opt/monappli/bin/monappli-api
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/monappli
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Lanceur du générateur de synthèse, installé dans /opt/monappli/bin par le paquet.
+# JAVA_HOME choisit le JDK (fixé par Ansible) ; MONAPPLI_JAR permet de viser le jar du build local.
+JAR="${MONAPPLI_JAR:-$(dirname "$0")/../lib/monappli-api.jar}"
+exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" -cp "$JAR" fr.exemple.monappli.synthese.GenererSynthese "$@"

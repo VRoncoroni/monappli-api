@@ -1,0 +1,11 @@
+<settings>
+  <!-- Maven passe par le groupe maven-public de Nexus (proxy de Maven Central).
+       NEXUS_URL est une variable de la CI, par exemple https://nexus.exemple.local -->
+  <mirrors>
+    <mirror>
+      <id>nexus</id>
+      <mirrorOf>*</mirrorOf>
+      <url>${env.NEXUS_URL}/repository/maven-public/</url>
+    </mirror>
+  </mirrors>
+</settings>

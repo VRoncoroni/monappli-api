@@ -1,0 +1,5 @@
+#!/bin/sh
+# Outil d'administration : « monappli --check-config <fichier> » valide app.conf.
+# Utilisé par Ansible (validate:) avant d'écrire la configuration.
+JAR="${MONAPPLI_JAR:-$(dirname "$0")/../lib/monappli-api.jar}"
+exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" -cp "$JAR" fr.exemple.monappli.ConfigCheck "$@"

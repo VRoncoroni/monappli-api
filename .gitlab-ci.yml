@@ -1,0 +1,89 @@
+# Pipeline de l'application monappli-api (GitLab CI)
+#   MR             : build (compilation, tests unitaires, jeux d'essai) — rien n'est publié
+#   main/release/* : build -> package (RPM signé) -> publish:candidate (yum-candidates)
+#                    -> propose:integration (MR dans ansible-socle) ; release : manuel
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ /^release\//          # correctifs d'une version déjà en prod
+
+stages: [build, package, publish, integration, release]
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2"
+  MVN: "mvn -B -s ci/settings.xml"
+  ANSIBLE_REPO: infra/ansible-socle                 # projet GitLab du repo Ansible
+
+default:
+  tags: [docker]
+
+.if-mr: &if-mr
+  if: $CI_PIPELINE_SOURCE == "merge_request_event"
+.if-main: &if-main
+  if: ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH =~ /^release\//) && $CI_PIPELINE_SOURCE == "push"
+
+# Compile, teste, produit le jar. Le même jar sera emballé : aucun rebuild ensuite.
+build:
+  stage: build
+  image: registry.exemple.local/outillage/maven:3.9-temurin-21
+  cache: { key: maven, paths: [.m2/] }
+  script:
+    - VERSION=$($MVN help:evaluate -Dexpression=project.version -q -DforceStdout)
+    - scripts/check-version-free.sh "$VERSION"
+    - $MVN -Dbuild.number=$CI_PIPELINE_IID verify
+    - tests/run-cases.sh                            # jeux d'essai rejoués avec le jar construit
+    - >-
+      printf 'VERSION=%s\nBUILD=%s\nRPM_FILE=monappli-api-%s-%s.noarch.rpm\n'
+      "$VERSION" "$CI_PIPELINE_IID" "$VERSION" "$CI_PIPELINE_IID" > build.env
+  artifacts:
+    when: always
+    paths: [target/monappli-api.jar]
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+      dotenv: build.env               # VERSION, BUILD et RPM_FILE pour les jobs suivants
+    expire_in: 1 week
+  rules: [*if-mr, *if-main]
+
+package:
+  stage: package
+  image: registry.exemple.local/outillage/nfpm:2
+  needs: [build]
+  script:
+    - mkdir -p dist
+    - nfpm package --config packaging/nfpm.yaml --packager rpm --target "dist/$RPM_FILE"
+    - (cd dist && sha256sum "$RPM_FILE" > "$RPM_FILE.sha256")
+  artifacts:
+    paths: [dist/]
+    expire_in: 1 year                 # l'empreinte sert encore au moment de la release
+  rules: [*if-main]
+
+publish:candidate:
+  stage: publish
+  image: registry.exemple.local/outillage/curl:8
+  needs: [build, package]
+  script:
+    - >-
+      curl -fsS -u "$NEXUS_CI_USER:$NEXUS_CI_PASSWORD"
+      --upload-file "dist/$RPM_FILE"
+      "$NEXUS_URL/repository/yum-candidates/monappli-api/$RPM_FILE"
+  rules: [*if-main]
+
+propose:integration:
+  stage: integration
+  image: registry.exemple.local/outillage/git-yq-curl:1
+  needs: [build, publish:candidate]
+  script: [scripts/propose-integration.sh]
+  rules: [*if-main]
+
+release:
+  stage: release
+  image: registry.exemple.local/outillage/git-yq-curl:1
+  needs: [build, package, publish:candidate]
+  resource_group: release
+  variables: { COMMIT_SHA: $CI_COMMIT_SHA }
+  script: [scripts/release.sh]
+  rules:
+    - <<: *if-main
+      when: manual
+      allow_failure: true             # le pipeline reste vert ; le bouton reste disponible
